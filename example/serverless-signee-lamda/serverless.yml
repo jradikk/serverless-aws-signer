@@ -1,0 +1,34 @@
+service: serverless-signee-lamda
+
+plugins:
+  modules:
+    - serverless-aws-signer
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  region: us-west-2
+  apiGateway:
+    shouldStartNameWithService: true
+
+custom:
+  signer:
+    individually: false
+    source:
+      s3:
+        bucketName: source-bucket-for-signer
+        key: lambda1.zip
+    destination:
+      s3:
+        bucketName: dest-bucket-for-signer
+        prefix: signed-
+    profileName: signing-profile
+    signingPolicy: Enforce
+  
+functions:
+  signee:
+    handler: index.lambda_handler
+    events:
+      - http:
+          path: test
+          method: get

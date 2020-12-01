@@ -1,0 +1,28 @@
+{
+  "name": "serverless-aws-signer",
+  "version": "0.0.1",
+  "description": "Signs Lambda functions with AWS Signer service",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jradikk/serverless-aws-signer.git"
+  },
+  "keywords": [
+    "serverless",
+    "plugins",
+    "lambda",
+    "aws",
+    "signer",
+    "serverless.com",
+    "serverless.yaml"
+  ],
+  "author": {
+    "name": "Yevhenii Hordashnyk",
+    "email": "yevhenii@alpacked.io"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/jradikk/serverless-aws-signer/issues"
+  },
+  "homepage": "https://github.com/jradikk/serverless-aws-signer#readme"
+}

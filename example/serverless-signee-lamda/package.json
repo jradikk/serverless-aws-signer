@@ -1,0 +1,14 @@
+{
+  "name": "serverless-signee-lambda",
+  "version": "0.0.1",
+  "description": "Example of serverless-aws-signer plugin usage",
+  "main": "index.js",
+  "author": {
+    "name": "Yevhenii Hordashnyk",
+    "email": "yevhenii@alpacked.io"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "serverless-aws-signer": "0.0.1"
+  }
+}
