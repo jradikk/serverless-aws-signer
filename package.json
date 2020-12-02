@@ -24,5 +24,8 @@
   "bugs": {
     "url": "https://github.com/jradikk/serverless-aws-signer/issues"
   },
-  "homepage": "https://github.com/jradikk/serverless-aws-signer#readme"
+  "homepage": "https://github.com/jradikk/serverless-aws-signer#readme",
+  "dependencies": {
+    "lodash": "^4.17.20"
+  }
 }
