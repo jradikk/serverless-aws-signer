@@ -28,6 +28,13 @@ custom:
 package:
     indvidually: true                              # Plugin works with both individually and commonly packaged functions
    
+functions:
+  signee:
+    handler: index.lambda_handler
+    signer:                                         # Any global parameter can be overridden by lambda individual configuration. package.individually.true needs to be enabled for the plugin to parse function configs
+      profileName: signing-profile 
+      signingPolicy: Enforce
+
 ```
 ---
 
