@@ -1,8 +1,7 @@
 service: serverless-signee-lamda
 
 plugins:
-  modules:
-    - serverless-aws-signer
+  - serverless-aws-signer
 
 provider:
   name: aws
@@ -13,22 +12,28 @@ provider:
 
 custom:
   signer:
-    individually: false
     source:
       s3:
         bucketName: source-bucket-for-signer
-        key: lambda1.zip
-    destination:
-      s3:
-        bucketName: dest-bucket-for-signer
-        prefix: signed-
     profileName: signing-profile
     signingPolicy: Enforce
-  
+    
+package:
+  individually: true
+
 functions:
   signee:
     handler: index.lambda_handler
+    signer:
+      profileName: signing-profile
+      signingPolicy: Enforce
     events:
       - http:
           path: test
           method: get
+  signee2:
+    handler: index.lambda_handler
+    events:
+      - http:
+          path: test
+          method: post
