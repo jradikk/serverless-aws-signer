@@ -5,6 +5,8 @@ const _ = require('lodash');
 
 const signersMethods = require('./src/SignersMethods');
 const cloudFormationGenerator = require('./src/cloudFormationGenerator');
+
+
 class ServerlessPlugin {
   constructor(serverless, options) {
     this.serverless = serverless;
@@ -32,10 +34,68 @@ class ServerlessPlugin {
       'signer:sign': this.signLambdas.bind(this),
       'signer:updateCloudFormation': this.addSigningConfigurationToCloudFormation.bind(this)
     };
+
+    const globalConfigSchemaProperties = {
+      source: {
+        type: 'object',
+        properties: {
+          s3: {
+            type: 'object',
+            properties: {
+              bucketName: {type: "string"},
+              key: {type: "string"}
+            },
+            required: ["bucketName"]
+          }
+        }
+      },
+      destination: {
+        type: 'object',
+        properties: {
+          s3: {
+            type: 'object',
+            properties: {
+              bucketName: {type: "string"},
+              key: {type: "string"}
+            }
+          }
+        }
+      },
+      profileName: {"type": "string"},
+      signingPolicy: {"type": "string"}
+    };
+
+    const functionConfigSchemaProperties = {
+      // Reserved for the future
+    };
+
+    serverless.configSchemaHandler.defineCustomProperties({
+      type: 'object',
+      properties: {
+        signer: {
+          '.*': {
+            type: 'object',
+            properties: globalConfigSchemaProperties,
+            additionalProperties: false
+          },
+        },
+      },
+    });
+
+    serverless.configSchemaHandler.defineFunctionProperties('aws', {
+      properties: {
+        signer: {
+          '.*': {
+            type: 'object',
+            properties: globalConfigSchemaProperties,
+            additionalProperties: false
+          },
+        },
+      },
+    });
+
   }
-
-
-
+  
   generateSignerConfiguration() {
     var signerProcesses = {};
 
@@ -107,7 +167,48 @@ class ServerlessPlugin {
     return signerProcesses
   }
 
-  signLambdas = async(serverless, options) => {
+  async verifyConfiguration(configuration) {
+
+    // Check if signingProfile is in place    
+    const profileArn = await signersMethods.getProfileParamByName(configuration.signerConfiguration.profileName, 'profileVersionArn', this.serverless)
+    
+    if (!profileArn) {
+      await this.createSigningProfile(configuration.signerConfiguration.profileName);
+    }
+
+    // Check if source bucket is in place
+    try {
+        await this.serverless.providers.aws.request("S3", "headBucket", {
+        Bucket: configuration.signerConfiguration.source.s3.bucketName
+      })
+    }
+    catch (e) {
+      if (e.providerError.code === "NotFound") {
+        await this.createS3Bucket(configuration.signerConfiguration.source.s3.bucketName)
+      }
+      else {
+        throw (e)
+      }
+    }
+
+    // Check if destination bucket is in place
+    try {
+      await this.serverless.providers.aws.request("S3", "headBucket", {
+        Bucket: configuration.signerConfiguration.destination.s3.bucketName
+      })
+    }
+    catch (e) {
+      if (e.providerError.code === "NotFound") {
+        await this.createS3Bucket(configuration.signerConfiguration.destination.s3.bucketName)
+      }
+      else {
+        throw (e)
+      }
+    }
+
+  }
+
+  async signLambdas() {
 
     this.serverless.cli.log('Signing functions...');
 
@@ -115,6 +216,7 @@ class ServerlessPlugin {
     
     for (let lambda in signerProcesses) {
       var signItem = signerProcesses[lambda];
+      await this.verifyConfiguration(signItem);
       // Copy deployment artifact to S3
       const fileContent = fs.readFileSync(signItem.packageArtifact);
 
@@ -155,8 +257,48 @@ class ServerlessPlugin {
     }
   }
 
-// TODO: Rewrite function definition
-  addSigningConfigurationToCloudFormation = async(serverless, options) => {
+  async createS3Bucket(bucketName) {
+
+    this.serverless.cli.log("Creating S3 bucket...")
+    await this.serverless.providers.aws.request('S3', 'createBucket', {
+      Bucket: bucketName,
+      CreateBucketConfiguration: {
+        LocationConstraint: this.options.region
+      }
+    })
+
+    await this.serverless.providers.aws.request('S3', 'putBucketVersioning', {
+      Bucket: bucketName,
+      VersioningConfiguration: {
+        MFADelete: "Disabled", 
+        Status: "Enabled"
+       }
+    })
+
+  }
+
+
+
+  async createSigningProfile(profileName) {
+
+    this.serverless.cli.log("Creating Signing profile...")
+    // Get Lambda Platform ID for Signing profile
+    const signingPlatforms = await this.serverless.providers.aws.request("Signer", "listSigningPlatforms", {
+      partner: "AWSLambda"
+    })
+
+    // TODO: Add support for signing profile configuration
+    const params = {
+      platformId: signingPlatforms.platforms[0].platformId,
+      profileName: profileName
+    }
+
+    await this.serverless.providers.aws.request('Signer', 'putSigningProfile', params)
+    
+    return
+  }
+
+  async addSigningConfigurationToCloudFormation() {
     this.serverless.cli.log('Updating signing configuration...');
     var cloudFormationResources = this.serverless.service.provider.compiledCloudFormationTemplate.Resources;
     const signerProcesses = this.generateSignerConfiguration();
