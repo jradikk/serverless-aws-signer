@@ -34,12 +34,15 @@ class ServerlessPlugin {
     };
   }
 
-  generateSignerConfiguration(lambda_function) {
+
+
+  generateSignerConfiguration() {
+    var signerProcesses = {};
 
     const defaultConfig = {
       source: {
         s3: {
-          key: lambda_function.name+'-'+Math.floor(+new Date() / 1000),
+          key: 'common'+'-'+Math.floor(+new Date() / 1000),
         }
       },
       destination: {
@@ -47,51 +50,69 @@ class ServerlessPlugin {
           prefix: "signed-"
         }
       },
-      profileName: this.serverless.service.service
+      profileName: this.serverless.service.service,
+      signingPolicy: "Enforce"
     }
 
-    const signerConfiguration = _.merge(defaultConfig, this.serverless.service.custom.signer, lambda_function.signer)
-    
-    try {
-      if (!signerConfiguration.source.s3.bucketName) {
-        throw new this.serverless.classes.Error("No bucket name was specified");
+    const lambda_functions = this.serverless.service.functions;
+
+    if (this.serverless.service.package.individually === true) {  
+      for (let lambda_function in lambda_functions) {
+        // Since merge mutates the first object in a set, we need to pass an empty object. Otherwise, it'll rewrite the default configuration
+        // https://stackoverflow.com/questions/19965844/lodash-difference-between-extend-assign-and-merge#comment57512843_19966511
+        const mergedConfig = _.merge({}, defaultConfig, this.serverless.service.custom.signer, lambda_functions[lambda_function].signer);
+        signerProcesses[lambda_function] = {
+          signerConfiguration: mergedConfig,
+          packageArtifact: lambda_functions[lambda_function].package.artifact
+        }
+        try {
+          // TODO: Remove this check with proper validation
+          if (!signerProcesses[lambda_function].signerConfiguration.source.s3.bucketName) {
+            throw new this.serverless.classes.Error("No bucket name was specified");
+          }
+          if (!signerProcesses[lambda_function].signerConfiguration.destination.s3.bucketName) {
+              signerProcesses[lambda_function].signerConfiguration.destination.s3.bucketName = signerProcesses[lambda_function].signerConfiguration.source.s3.bucketName
+            }
+        }
+        // TODO: Remove this check with proper validation
+        catch {
+          throw new this.serverless.classes.Error("Incorrect signer plugin configuration");
+        }
+
       }
-        if (!signerConfiguration.destination.s3.bucketName) {
-          signerConfiguration.destination.s3.bucketName = signerConfiguration.source.s3.bucketName
-        }
-        if (signerConfiguration.signingPolicy) {
-          delete signerConfiguration.signingPolicy
-        }
     }
-    catch {
-      throw new this.serverless.classes.Error("Incorrect signer plugin configuration");
+
+    else {
+      const lambda_function = "common";
+      signerProcesses[lambda_function] = {
+        signerConfiguration: _.merge(defaultConfig, this.serverless.service.custom.signer),
+        packageArtifact: this.serverless.service.package.artifact
+      }
+      
+      try {
+        // TODO: Remove this check with proper validation
+        if (!signerProcesses[lambda_function].signerConfiguration.source.s3.bucketName) {
+          throw new this.serverless.classes.Error("No bucket name was specified");
+        }
+        if (!signerProcesses[lambda_function].signerConfiguration.destination.s3.bucketName) {
+            signerProcesses[lambda_function].signerConfiguration.destination.s3.bucketName = signerProcesses[lambda_function].signerConfiguration.source.s3.bucketName
+          }
+      }
+      // TODO: Remove this check with proper validation
+      catch {
+        throw new this.serverless.classes.Error("Incorrect signer plugin configuration");
+      }
+
     }
-    
-    return signerConfiguration
+    return signerProcesses
   }
 
   signLambdas = async(serverless, options) => {
 
     this.serverless.cli.log('Signing functions...');
 
-    var signerProcesses = {};
-
-    if (this.serverless.service.package.individually === true) {
-      const lambda_functions = this.serverless.service.functions;
-      for (let lambda_function in lambda_functions) {
-        signerProcesses[lambda_function] = {
-          signerConfiguration: this.generateSignerConfiguration(lambda_functions[lambda_function]),
-          packageArtifact: lambda_functions[lambda_function].package.artifact
-        }
-      }
-    }
-    else {
-      signerProcesses["common"] = {
-          signerConfiguration: this.generateSignerConfiguration({"name": "common","signer": this.serverless.service.custom.signer}),
-          packageArtifact: this.serverless.service.package.artifact
-        }
-    }
-
+    const signerProcesses = this.generateSignerConfiguration();
+    
     for (let lambda in signerProcesses) {
       var signItem = signerProcesses[lambda];
       // Copy deployment artifact to S3
@@ -105,6 +126,9 @@ class ServerlessPlugin {
 
       // Update configuration with a version of the uploaded S3 object
       signItem.signerConfiguration.source.s3.version = S3Response.VersionId
+      if (signItem.signerConfiguration.signingPolicy) {
+        delete signItem.signerConfiguration.signingPolicy
+      }
 
       // Start signing job
       var signJob = await this.serverless.providers.aws.request('Signer', 'startSigningJob', signItem.signerConfiguration)
@@ -135,20 +159,28 @@ class ServerlessPlugin {
   addSigningConfigurationToCloudFormation = async(serverless, options) => {
     this.serverless.cli.log('Updating signing configuration...');
     var cloudFormationResources = this.serverless.service.provider.compiledCloudFormationTemplate.Resources;
+    const signerProcesses = this.generateSignerConfiguration();
+    for (let lambda in signerProcesses) {
+      const profileName = signerProcesses[lambda].signerConfiguration.profileName;
+      const signingPolicy = signerProcesses[lambda].signerConfiguration.signingPolicy;
+      const resourceName = lambda+"CodeSigningConfig";
+      // Copy deployment artifact to S3
 
-    var profileArn = await signersMethods.getProfileParamByName(this.serverless.service.custom.signer.profileName, 'profileVersionArn', this.serverless)
-    
-    if (!profileArn) {
-      throw new Error("Signing profile not found")
-    }
+      var profileArn = await signersMethods.getProfileParamByName(profileName, 'profileVersionArn', this.serverless)
+      
+      // TODO: Remove this check with proper validation
+      if (!profileArn) {
+        throw new Error("Signing profile not found")
+      }
 
-    const signingCFTemplate=cloudFormationGenerator.codeSigningConfig(profileArn, this.serverless.service.custom.signer.signingPolicy)
+      const signingCFTemplate=cloudFormationGenerator.codeSigningConfig(profileArn, signingPolicy)
 
-    cloudFormationResources.CodeSigningConfig = signingCFTemplate
+      cloudFormationResources[resourceName] = signingCFTemplate
 
-    for (let resource in cloudFormationResources){
-      if (cloudFormationResources[resource].Type === 'AWS::Lambda::Function') {
-        cloudFormationResources[resource].Properties.CodeSigningConfigArn = {"Ref": "CodeSigningConfig"}
+      for (let resource in cloudFormationResources){
+        if (cloudFormationResources[resource].Type === 'AWS::Lambda::Function') {
+          cloudFormationResources[resource].Properties.CodeSigningConfigArn = {"Ref": resourceName}
+        }
       }
     }
   }
