@@ -59,6 +59,9 @@ class ServerlessPlugin {
         if (!signerConfiguration.destination.s3.bucketName) {
           signerConfiguration.destination.s3.bucketName = signerConfiguration.source.s3.bucketName
         }
+        if (signerConfiguration.signingPolicy) {
+          delete signerConfiguration.signingPolicy
+        }
     }
     catch {
       throw new this.serverless.classes.Error("Incorrect signer plugin configuration");
@@ -84,7 +87,7 @@ class ServerlessPlugin {
     }
     else {
       signerProcesses["common"] = {
-          signerConfiguration: this.serverless.service.custom.signer,
+          signerConfiguration: this.generateSignerConfiguration({"name": "common","signer": this.serverless.service.custom.signer}),
           packageArtifact: this.serverless.service.package.artifact
         }
     }
@@ -100,27 +103,11 @@ class ServerlessPlugin {
         Body: fileContent
       })
 
-      const S3ObjectVersion = S3Response.VersionId
-
-      var sign_params = {
-        source: {
-          s3: {
-            bucketName: signItem.signerConfiguration.source.s3.bucketName,
-            key: signItem.signerConfiguration.source.s3.key,
-            version: S3ObjectVersion
-          }
-        },
-        destination: {
-          s3: {
-            bucketName: signItem.signerConfiguration.destination.s3.bucketName,
-            prefix: signItem.signerConfiguration.destination.s3.prefix,
-          }
-        },
-        profileName: signItem.signerConfiguration.profileName
-      }
+      // Update configuration with a version of the uploaded S3 object
+      signItem.signerConfiguration.source.s3.version = S3Response.VersionId
 
       // Start signing job
-      var signJob = await this.serverless.providers.aws.request('Signer', 'startSigningJob', sign_params)
+      var signJob = await this.serverless.providers.aws.request('Signer', 'startSigningJob', signItem.signerConfiguration)
 
       // Wait until Signing job successfully completes
       var status = ""
@@ -144,9 +131,11 @@ class ServerlessPlugin {
     }
   }
 
+// TODO: Rewrite function definition
   addSigningConfigurationToCloudFormation = async(serverless, options) => {
     this.serverless.cli.log('Updating signing configuration...');
     var cloudFormationResources = this.serverless.service.provider.compiledCloudFormationTemplate.Resources;
+
     var profileArn = await signersMethods.getProfileParamByName(this.serverless.service.custom.signer.profileName, 'profileVersionArn', this.serverless)
     
     if (!profileArn) {
