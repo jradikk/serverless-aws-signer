@@ -113,7 +113,7 @@ class ServerlessPlugin {
       },
       profileName: this.serverless.service.service,
       signingPolicy: "Enforce",
-      retain: false
+      retain: true
     }
 
     const lambda_functions = this.serverless.service.functions;

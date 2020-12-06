@@ -14,6 +14,7 @@ plugins:
 
 custom:
   signer:
+    retain: false                                  # Whether to retain signing Profile and S3 buckets during the project termination (`sls remove` command), if they were created by the plugin
     source:
       s3:
         bucketName: source-bucket-for-signer       # [REQUIRED] Source bucket for AWS Signer where zip archive with lambda code will be uploaded
@@ -32,17 +33,26 @@ functions:
   signee:
     handler: index.lambda_handler
     signer:                                         # Any global parameter can be overridden by lambda individual configuration. package.individually.true needs to be enabled for the plugin to parse function configs
-      profileName: signing-profile 
+      profileName: signing-profile
       signingPolicy: Enforce
 
 ```
 ---
 
-## Default Configuration 
+## Default Configuration
 
-All parameters except for source S3 bucket and Signing profile can be ommitted. In this case they are taked from default values:
+All parameters except for source S3 bucket and Signing profile can be ommitted. In this case they are taken from default values:
 
 * `signer.source.s3.key` - defaults to `function_name` + `unix_timestamp`
 * `signer.destination.s3.bucketName` - defaults to the source bucketName value
 * `signer.destination.s3.prefix` - defaults to `signed-`
 * `signingPolicy` - defaults to `Enforce`
+* `retain` - defaults to `true`
+
+## Default behavior
+
+If an S3 bucket or a Signing profile are specified in configuration but couldn't be found in target AWS account, plugin will attempt to create them using AWS SDK (Not CloudFormation template). 
+
+When project gets terminated, plugin attempts to delete signingProfiles and S3buckets specified in corresponding configuration, unless `retain` option is set to `true`. Default value is true
+
+In case one needs to change a signing provider of a lambda function, he'll need to recreate the lambda function, otherwise, AWS will reject the zip code with Lambda code, since it will be signed by a different signing Provider than the one specified in serverless configuration. It happens because signing is done before the CloudFormation template gets deployed
