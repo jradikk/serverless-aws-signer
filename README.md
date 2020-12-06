@@ -1,5 +1,9 @@
 # Serverless plugin for Lambda functions signing using AWS Signer service
-
+[![serverless](http://public.serverless.com/badges/v3.svg)](https://www.serverless.com)
+[![Build Status](https://travis-ci.org/jradikk/serverless-aws-signer.svg?branch=master)](https://travis-ci.org/jradikk/serverless-aws-signer)
+[![npm version](https://badge.fury.io/js/serverless-aws-signer.svg)](https://badge.fury.io/js/serverless-aws-signer)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/jradikk/serverless-aws-signer/master/LICENSE)
+[![npm downloads](https://img.shields.io/npm/dt/serverless-aws-signer.svg?style=flat)](https://www.npmjs.com/package/serverless-aws-signer)
 ## Installation
 
 `npm install serverless-aws-signer`
