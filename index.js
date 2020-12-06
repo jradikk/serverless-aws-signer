@@ -32,7 +32,8 @@ class ServerlessPlugin {
       'after:package:createDeploymentArtifacts': this.signLambdas.bind(this),
       'before:package:finalize': this.addSigningConfigurationToCloudFormation.bind(this),
       'signer:sign': this.signLambdas.bind(this),
-      'signer:updateCloudFormation': this.addSigningConfigurationToCloudFormation.bind(this)
+      'before:remove:remove': this.removeResources.bind(this)
+      // 'signer:updateCloudFormation': this.addSigningConfigurationToCloudFormation.bind(this)
     };
 
     const globalConfigSchemaProperties = {
@@ -111,7 +112,8 @@ class ServerlessPlugin {
         }
       },
       profileName: this.serverless.service.service,
-      signingPolicy: "Enforce"
+      signingPolicy: "Enforce",
+      retain: false
     }
 
     const lambda_functions = this.serverless.service.functions;
@@ -121,9 +123,12 @@ class ServerlessPlugin {
         // Since merge mutates the first object in a set, we need to pass an empty object. Otherwise, it'll rewrite the default configuration
         // https://stackoverflow.com/questions/19965844/lodash-difference-between-extend-assign-and-merge#comment57512843_19966511
         const mergedConfig = _.merge({}, defaultConfig, this.serverless.service.custom.signer, lambda_functions[lambda_function].signer);
+
+        const packagePath = (lambda_functions[lambda_function].package) ? (lambda_functions[lambda_function].package.artifact) : (null)
+
         signerProcesses[lambda_function] = {
           signerConfiguration: mergedConfig,
-          packageArtifact: lambda_functions[lambda_function].package.artifact
+          packageArtifact: packagePath
         }
         try {
           // TODO: Remove this check with proper validation
@@ -230,6 +235,7 @@ class ServerlessPlugin {
       signItem.signerConfiguration.source.s3.version = S3Response.VersionId
       if (signItem.signerConfiguration.signingPolicy) {
         delete signItem.signerConfiguration.signingPolicy
+        delete signItem.signerConfiguration.retain
       }
 
       // Start signing job
@@ -276,8 +282,6 @@ class ServerlessPlugin {
     })
 
   }
-
-
 
   async createSigningProfile(profileName) {
 
@@ -326,6 +330,109 @@ class ServerlessPlugin {
       }
     }
   }
+
+  async removeResources() {
+    
+    const signerProcesses = this.generateSignerConfiguration();
+
+    for (let lambda in signerProcesses) {
+      var signItem = signerProcesses[lambda];
+      if (!signItem.signerConfiguration.retain) {
+        await this.removeS3Bucket(signItem.signerConfiguration.source.s3.bucketName)
+        await this.removeS3Bucket(signItem.signerConfiguration.destination.s3.bucketName)
+      }
+    }
+
+    for (let lambda in signerProcesses) {
+      var signItem = signerProcesses[lambda];
+      if (!signItem.signerConfiguration.retain) {
+        await this.removeSigningProfile(signItem.signerConfiguration.profileName)
+      }
+    }
+  }
+  
+  async removeSigningProfile(profileName) {
+
+    // Make sure signing profile exists and hasn't been revoked yet
+    try {
+
+    const profileVersion = await signersMethods.getProfileParamByName(profileName, 'profileVersion', this.serverless)
+
+    if (profileName && profileVersion) {
+      const params = {
+        effectiveTime: new Date,
+        profileName: profileName,
+        profileVersion: profileVersion,
+        reason: 'Project removal'
+      };
+
+      await this.serverless.providers.aws.request('Signer', 'revokeSigningProfile', params)
+      }
+    }
+    catch (e) {
+      if (e.providerError.code !== "ProfileRevoked") {
+        throw (e)
+      }
+    }
+    return
+  }
+
+  async removeS3Bucket(bucketName) {
+
+    // Make sure bucket exists
+    try {
+      await this.serverless.providers.aws.request("S3", "headBucket", {
+        Bucket: bucketName
+      })
+      // Cleanup S3 bucket
+      var s3ObjectsList = [];
+
+      // TODO: Use ContinuationToken to go through an array of more than 1000 versions/keys
+      while (s3ObjectsList) {
+        s3ObjectsList = [];
+        var s3Objects = await this.serverless.providers.aws.request('S3', 'listObjectVersions', {
+          Bucket: bucketName
+        })
+
+        s3Objects.Versions.forEach(item => {s3ObjectsList.push({"Key": item.Key, VersionId: item.VersionId})})
+        s3Objects.DeleteMarkers.forEach(item => {s3ObjectsList.push({"Key": item.Key, VersionId: item.VersionId})})
+        
+        if (s3ObjectsList.length > 0) {
+          var response = await this.serverless.providers.aws.request('S3', 'deleteObjects', {
+            Bucket: bucketName,
+            Delete: {
+              Objects: s3ObjectsList
+            }
+          })
+        }
+        else {
+          s3ObjectsList = null
+        }
+      }
+
+      // Delete S3 bucket
+      await this.serverless.providers.aws.request('S3', 'deleteBucket', {
+        Bucket: bucketName
+      })
+
+    }
+    catch (e) {
+      if (e.providerError.code !== "NotFound") {
+        throw (e)
+      }
+    }
+
+    // // Disable versioning
+    // await this.serverless.providers.aws.request('S3', 'putBucketVersioning', {
+    //   Bucket: bucketName,
+    //   VersioningConfiguration: {
+    //     MFADelete: "Disabled", 
+    //     Status: "Enabled"
+    //    }
+    // })
+
+  }
+
 }
 
 module.exports = ServerlessPlugin;
