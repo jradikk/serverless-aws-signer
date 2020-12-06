@@ -12,6 +12,7 @@ provider:
 
 custom:
   signer:
+    retain: true
     source:
       s3:
         bucketName: source-bucket-for-signer
