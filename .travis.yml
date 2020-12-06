@@ -10,8 +10,6 @@ before_install:
   - npm i -g npm
 install:
   - npm install
-before_deploy:
-  - npm run build
 deploy:
   skip_cleanup: true
   provider: npm
