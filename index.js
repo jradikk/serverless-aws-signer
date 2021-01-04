@@ -29,7 +29,7 @@ class ServerlessPlugin {
     };
 
     this.hooks = {
-      'after:package:createDeploymentArtifacts': this.signLambdas.bind(this),
+      'after:package:createDeploymentArtifacts': () => this.signLambdas().then(this.signLayers.bind(this)),
       'before:package:finalize': this.addSigningConfigurationToCloudFormation.bind(this),
       'signer:sign': this.signLambdas.bind(this),
       'before:remove:remove': this.removeResources.bind(this)
@@ -172,6 +172,59 @@ class ServerlessPlugin {
     return signerProcesses
   }
 
+  generateLayersConfiguration() {
+    var signerProcesses = {};
+
+    const defaultConfig = {
+      source: {
+        s3: {
+          key: 'common'+'-'+Math.floor(+new Date() / 1000),
+        }
+      },
+      destination: {
+        s3: {
+          prefix: "signed-"
+        }
+      },
+      profileName: this.serverless.service.service,
+      signingPolicy: "Enforce",
+      retain: true
+    }
+
+    const layers = this.serverless.service.layers;
+
+    for (let layer in layers) {
+      console.log(layer)
+      // Since merge mutates the first object in a set, we need to pass an empty object. Otherwise, it'll rewrite the default configuration
+      // https://stackoverflow.com/questions/19965844/lodash-difference-between-extend-assign-and-merge#comment57512843_19966511
+      const mergedConfig = _.merge({}, defaultConfig, this.serverless.service.custom.signer, layers[layer].signer);
+
+      const packagePath = (layers[layer].package) ? (layers[layer].package.artifact) : (null)
+
+      signerProcesses[layer] = {
+        signerConfiguration: mergedConfig,
+        packageArtifact: packagePath
+      }
+      try {
+        // TODO: Remove this check with proper validation
+        if (!signerProcesses[layer].signerConfiguration.source.s3.bucketName) {
+          throw new this.serverless.classes.Error("No bucket name was specified");
+        }
+        if (!signerProcesses[layer].signerConfiguration.destination.s3.bucketName) {
+            signerProcesses[layer].signerConfiguration.destination.s3.bucketName = signerProcesses[layer].signerConfiguration.source.s3.bucketName
+          }
+      }
+      // TODO: Remove this check with proper validation
+      catch {
+        throw new this.serverless.classes.Error("Incorrect signer plugin configuration");
+      }
+
+    }
+
+    return signerProcesses
+  }
+
+
   async verifyConfiguration(configuration) {
 
     // Check if signingProfile is in place    
@@ -221,6 +274,55 @@ class ServerlessPlugin {
     
     for (let lambda in signerProcesses) {
       var signItem = signerProcesses[lambda];
+      await this.verifyConfiguration(signItem);
+      // Copy deployment artifact to S3
+      const fileContent = fs.readFileSync(signItem.packageArtifact);
+
+      var S3Response = await this.serverless.providers.aws.request('S3', 'upload', {
+        Bucket: signItem.signerConfiguration.source.s3.bucketName, 
+        Key:  signItem.signerConfiguration.source.s3.key,
+        Body: fileContent
+      })
+
+      // Update configuration with a version of the uploaded S3 object
+      signItem.signerConfiguration.source.s3.version = S3Response.VersionId
+      if (signItem.signerConfiguration.signingPolicy) {
+        delete signItem.signerConfiguration.signingPolicy
+        delete signItem.signerConfiguration.retain
+      }
+
+      // Start signing job
+      var signJob = await this.serverless.providers.aws.request('Signer', 'startSigningJob', signItem.signerConfiguration)
+
+      // Wait until Signing job successfully completes
+      var status = ""
+      while ( status !== "Succeeded" && status !== "Failed" ) {
+        var jobStatus = await this.serverless.providers.aws.request('Signer', 'describeSigningJob', {jobId: signJob.jobId})
+        status = jobStatus.status
+      }
+
+      if (status === "Failed") {
+        throw new Error(`Signing job has failed with ${jobStatus.statusReason} reason`)
+      }
+
+      var signedCodeLocation = jobStatus.signedObject.s3
+
+      // Replace current zip archive of deployment archive with the same payload but signed
+        const { Body } = await this.serverless.providers.aws.request('S3', 'getObject', {
+          Bucket: signedCodeLocation.bucketName, 
+          Key:  signedCodeLocation.key
+        })
+        await fs.writeFile(signItem.packageArtifact, Body)
+    }
+  }
+
+  async signLayers() {
+    this.serverless.cli.log('Signing layers...');
+
+    const signerProcesses = this.generateLayersConfiguration();
+    
+    for (let layer in signerProcesses) {
+      var signItem = signerProcesses[layer];
       await this.verifyConfiguration(signItem);
       // Copy deployment artifact to S3
       const fileContent = fs.readFileSync(signItem.packageArtifact);
