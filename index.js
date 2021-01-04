@@ -194,7 +194,6 @@ class ServerlessPlugin {
     const layers = this.serverless.service.layers;
 
     for (let layer in layers) {
-      console.log(layer)
       // Since merge mutates the first object in a set, we need to pass an empty object. Otherwise, it'll rewrite the default configuration
       // https://stackoverflow.com/questions/19965844/lodash-difference-between-extend-assign-and-merge#comment57512843_19966511
       const mergedConfig = _.merge({}, defaultConfig, this.serverless.service.custom.signer, layers[layer].signer);
