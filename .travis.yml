@@ -6,7 +6,6 @@ before_install:
 install:
   - npm install
 deploy:
-  skip_cleanup: true
   provider: npm
   email: $NPM_EMAIL
   api_key: $NPM_KEY
