@@ -1,6 +1,6 @@
 {
   "name": "serverless-aws-signer",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Signs Lambda functions with AWS Signer service",
   "main": "index.js",
   "repository": {
