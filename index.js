@@ -367,11 +367,21 @@ class ServerlessPlugin {
   async createS3Bucket(bucketName) {
 
     this.serverless.cli.log("Creating S3 bucket...")
-    await this.serverless.providers.aws.request('S3', 'createBucket', {
-      Bucket: bucketName,
-      CreateBucketConfiguration: {
+
+    // https://github.com/aws/aws-sdk-js/issues/3647
+    if (this.options.region == "us-east-1") {
+      var bucketConfiguration = {}
+    }
+
+    else {
+      var bucketConfiguration = {
         LocationConstraint: this.options.region
       }
+    }
+
+    await this.serverless.providers.aws.request('S3', 'createBucket', {
+      Bucket: bucketName,
+      CreateBucketConfiguration: bucketConfiguration
     })
 
     await this.serverless.providers.aws.request('S3', 'putBucketVersioning', {
