@@ -549,7 +549,7 @@ class ServerlessPlugin {
 
 // Making sure the resource's logical ID is alphanumeric.
 function normalizeResourceName(name) {
-  return name.replace(
+  return name.replace( // PascalCase as done by serverless fw
     /[^-_]*[-_]*/g,
     txt => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
   ).replaceAll('-', 'Dash').replaceAll('_', 'Underscore');
