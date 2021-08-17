@@ -421,7 +421,7 @@ class ServerlessPlugin {
     for (let lambda in signerProcesses) {
       const profileName = signerProcesses[lambda].signerConfiguration.profileName;
       const signingPolicy = signerProcesses[lambda].signerConfiguration.signingPolicy;
-      const resourceName = lambda+"CodeSigningConfig";
+      const resourceName = normalizeResourceName(lambda) + "CodeSigningConfig";
       // Copy deployment artifact to S3
 
       var profileArn = await signersMethods.getProfileParamByName(profileName, 'profileVersionArn', this.serverless)
@@ -545,6 +545,14 @@ class ServerlessPlugin {
 
   }
 
+}
+
+// Making sure the resource's logical ID is alphanumeric.
+function normalizeResourceName(name) {
+  return name.replace(
+    /[^-_]*[-_]*/g,
+    txt => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
+  ).replace(/-/g, 'Dash').replace(/_/g, 'Underscore');
 }
 
 module.exports = ServerlessPlugin;
