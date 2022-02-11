@@ -4,8 +4,7 @@ const fs = require('fs');
 const _ = require('lodash');
 
 const signersMethods = require('./src/SignersMethods');
-const cloudFormationGenerator = require('./src/cloudFormationGenerator');
-
+const cloudFormationGenerator = require('./src/CloudFormationGenerator');
 
 class ServerlessPlugin {
   constructor(serverless, options) {
