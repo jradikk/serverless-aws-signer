@@ -29,6 +29,7 @@ custom:
         prefix: signed-                            # Prefix to be added to the name of the signed archive
     profileName: signing-profile                   # AWS Signing Profle name. Currently needs to be created separately
     signingPolicy: Enforce                         # Whether to disallow code updated signed improperly or just fire a warning
+    description: signing-description               # Description of the signing profile displayed in AWS 
 
 package:
     indvidually: true                              # Plugin works with both individually and commonly packaged functions
@@ -52,6 +53,7 @@ All parameters except for source S3 bucket and Signing profile can be ommitted. 
 * `signer.destination.s3.prefix` - defaults to `signed-`
 * `signingPolicy` - defaults to `Enforce`
 * `retain` - defaults to `true`
+* `description` - defaults to `Not set`
 
 ## Default behavior
 

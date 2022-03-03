@@ -22,6 +22,7 @@ class ServerlessPlugin {
               '(e.g. "--function main or "-f secondary")',
             required: true,
             shortcut: 'f',
+            type: 'string',
           },
         },
       },
@@ -62,7 +63,9 @@ class ServerlessPlugin {
         }
       },
       profileName: {"type": "string"},
-      signingPolicy: {"type": "string"}
+      signingPolicy: { "type": "string" },
+      description: {"type": "string"},
+      retain: { "type": "boolean" },
     };
 
     const functionConfigSchemaProperties = {
@@ -73,11 +76,9 @@ class ServerlessPlugin {
       type: 'object',
       properties: {
         signer: {
-          '.*': {
             type: 'object',
             properties: globalConfigSchemaProperties,
             additionalProperties: false
-          },
         },
       },
     });
@@ -85,11 +86,9 @@ class ServerlessPlugin {
     serverless.configSchemaHandler.defineFunctionProperties('aws', {
       properties: {
         signer: {
-          '.*': {
             type: 'object',
             properties: globalConfigSchemaProperties,
             additionalProperties: false
-          },
         },
       },
     });
@@ -112,7 +111,8 @@ class ServerlessPlugin {
       },
       profileName: this.serverless.service.service,
       signingPolicy: "Enforce",
-      retain: true
+      description: 'Not set',
+      retain: true,
     }
 
     const lambda_functions = this.serverless.service.functions;
@@ -187,6 +187,7 @@ class ServerlessPlugin {
       },
       profileName: this.serverless.service.service,
       signingPolicy: "Enforce",
+      description: "Not set",
       retain: true
     }
 
@@ -285,8 +286,9 @@ class ServerlessPlugin {
       // Update configuration with a version of the uploaded S3 object
       signItem.signerConfiguration.source.s3.version = S3Response.VersionId
       if (signItem.signerConfiguration.signingPolicy) {
-        delete signItem.signerConfiguration.signingPolicy
-        delete signItem.signerConfiguration.retain
+        delete signItem.signerConfiguration.signingPolicy;
+        delete signItem.signerConfiguration.retain;
+        delete signItem.signerConfiguration.description;
       }
 
       // Start signing job
@@ -334,8 +336,9 @@ class ServerlessPlugin {
       // Update configuration with a version of the uploaded S3 object
       signItem.signerConfiguration.source.s3.version = S3Response.VersionId
       if (signItem.signerConfiguration.signingPolicy) {
-        delete signItem.signerConfiguration.signingPolicy
-        delete signItem.signerConfiguration.retain
+        delete signItem.signerConfiguration.signingPolicy;
+        delete signItem.signerConfiguration.retain;
+        delete signItem.signerConfiguration.description;
       }
 
       // Start signing job
@@ -420,23 +423,23 @@ class ServerlessPlugin {
     for (let lambda in signerProcesses) {
       const profileName = signerProcesses[lambda].signerConfiguration.profileName;
       const signingPolicy = signerProcesses[lambda].signerConfiguration.signingPolicy;
+      const description = signerProcesses[lambda].signerConfiguration.description;
       const resourceName = normalizeResourceName(lambda) + "CodeSigningConfig";
       // Copy deployment artifact to S3
 
-      var profileArn = await signersMethods.getProfileParamByName(profileName, 'profileVersionArn', this.serverless)
+      var profileArn = await signersMethods.getProfileParamByName(profileName, 'profileVersionArn', this.serverless);
       
       // TODO: Remove this check with proper validation
       if (!profileArn) {
         throw new Error("Signing profile not found")
       }
-
-      const signingCFTemplate=cloudFormationGenerator.codeSigningConfig(profileArn, signingPolicy)
+      const signingCFTemplate = cloudFormationGenerator.codeSigningConfig(profileArn, signingPolicy, description);
 
       cloudFormationResources[resourceName] = signingCFTemplate
 
       for (let resource in cloudFormationResources){
         if (cloudFormationResources[resource].Type === 'AWS::Lambda::Function') {
-          cloudFormationResources[resource].Properties.CodeSigningConfigArn = {"Ref": resourceName}
+          cloudFormationResources[resource].Properties.CodeSigningConfigArn = { "Ref": resourceName };
         }
       }
     }
@@ -449,8 +452,8 @@ class ServerlessPlugin {
     for (let lambda in signerProcesses) {
       var signItem = signerProcesses[lambda];
       if (!signItem.signerConfiguration.retain) {
-        await this.removeS3Bucket(signItem.signerConfiguration.source.s3.bucketName)
-        await this.removeS3Bucket(signItem.signerConfiguration.destination.s3.bucketName)
+        await this.removeS3Bucket(signItem.signerConfiguration.source.s3.bucketName);
+        await this.removeS3Bucket(signItem.signerConfiguration.destination.s3.bucketName);
       }
     }
 
